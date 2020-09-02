@@ -15,58 +15,99 @@ import time
 
 import board
 import busio
-import digitalio
+from digitalio import DigitalInOut
 
 
 class ESP32:
-    """Class to manage ESP32 running NINA firmware for Wifi or Bluetooth."""
+    """Class to manage ESP32 running NINA firmware for WiFi or Bluetooth."""
 
     NOT_IN_USE = 0
     """Not currently being used."""
-    BLUETOOTH = 1
+    BOOTLOADER = 1
+    """Put ESP32 into bootloader mode."""
+    BLUETOOTH = 2
     """HCI Bluetooth mode."""
-    WIFI = 2
-    """Wifi mode."""
+    WIFI = 3
+    """WiFi mode."""
+    _MODES = (NOT_IN_USE, BOOTLOADER, BLUETOOTH, WIFI)
 
     def __init__(
-        self,
-        *,
-        esp_reset=board.ESP_RESET,
-        esp_gpio0=board.ESP_GPIO0,
-        esp_busy=board.ESP_BUSY,
-        esp_cs=board.ESP_CS,
-        esp_tx=board.ESP_TX,
-        esp_rx=board.ESP_RX,
-        spi=None,
-        reset_high=False,
+        self, *, reset=None, gpio0=None, busy=None, chip_select=None, reset_high=False,
     ):
-        """Create an ESP32 instance, passing the pins needed to reset and communicate
+
+        """Create an ESP32 instance, passing the objects needed to reset and communicate
         with the adapter.
+
+        :param reset ~microcontroller.Pin: ESP32 RESET pin.
+           If `None`, use ``board.ESP_RESET``.
+        :param gpio0 ~microcontroller.Pin: ESP32 GPIO0 pin.
+           Used for ESP32 boot selection when reset, and as RTS for UART communication.
+           If `None`, use ``board.ESP_GPIO0``.
+        :param busy ~microcontroller.Pin: ESP32 BUSY pin (sometimes called READY).
+           Used as CTS indicator for UART communication.
+           If `None`, use ``board.ESP_BUSY``.
+        :param chip_select ~microcontroller.Pin: ESP32 CS (chip select) pin.
+            Also used for ESP32 mode selection when reset.
+            If `None`, use ``board.ESP_CS``.
+        :param reset_high bool: True if `reset` is brought high to reset;
+            `False` if brought low.
         """
         self._mode = ESP32.NOT_IN_USE
 
-        self._spi = board.SPI() if spi is None else spi
-
+        # We can't use board.ESP_RESET, etc. as defaults, because they may not exist.
+        self._reset = DigitalInOut(reset or board.ESP_RESET)
+        # Turn off ESP32 by holding reset line
+        self._reset.switch_to_output(reset_high)
         self._reset_high = reset_high
 
-        self._reset = digitalio.DigitalInOut(esp_reset)
-        self._reset.switch_to_output(reset_high)
+        # These will be set to input or input as necessary.
+        self._gpio0_rts = DigitalInOut(gpio0 or board.ESP_GPIO0)
+        self._busy_cts = DigitalInOut(busy or board.ESP_BUSY)
+        self._chip_select = DigitalInOut(chip_select or board.ESP_CS)
 
-        self._gpio0_and_rts = digitalio.DigitalInOut(esp_gpio0)
-        self._busy_and_cts = digitalio.DigitalInOut(esp_busy)
-        self._chip_select = digitalio.DigitalInOut(esp_cs)
-        self._uart = busio.UART(
-            esp_tx, esp_rx, baudrate=115200, timeout=0, receiver_buffer_size=512
-        )
+        # Used for Bluetooth mode.
+        self._uart = None
+        self._bleio_adapter = None
+        # Used for WiFi mode.
+        self._spi = None
 
-    def _reset_esp32(self):
+    def reset(self, mode, debug=False):
+        """Do hard reset of the ESP32.
+
+        :param mode: One of `ESP32.NOT_IN_USE`, `ESP32.BOOTLOADER`, `ESP32.BLUETOOTH`, `ESP32.WIFI`.
+        """
+        if mode not in ESP32._MODES:
+            raise ValueError("Invalid mode")
+
+        # GPIO0 high means boot from SPI flash.
+        # Low means go into bootloader mode.
+        self._gpio0_rts.switch_to_output(mode != ESP32.BOOTLOADER)
+
+        if mode == ESP32.NOT_IN_USE:
+            # Turn of ESP32 by holding reset line.
+            self._reset.switch_to_output(self._reset_high)
+            self._mode = mode
+            return
+
+        if mode == ESP32.BLUETOOTH:
+            self._chip_select.switch_to_output(False)
+        elif mode == ESP32.WIFI:
+            self._chip_select.switch_to_output(True)
+
+        # Initial mode. Changed if reset is successful.
+        self._mode = ESP32.NOT_IN_USE
+
         # Reset by toggling reset pin for 100ms
-        self._reset.value = self._reset_high
+        self._reset.switch_to_output(self._reset_high)
         time.sleep(0.1)
         self._reset.value = not self._reset_high
 
         #  Wait 1 second for startup.
         time.sleep(1.0)
+
+        if mode == ESP32.BOOTLOADER:
+            # No startup message expected.
+            return
 
         startup_message = b""
         while self._uart.in_waiting:  # pylint: disable=no-member
@@ -74,30 +115,6 @@ class ESP32:
             if more:
                 startup_message += more
 
-        return startup_message
-
-    def start_bluetooth(self, debug=False):
-        """Set up the ESP32 in HCI Bluetooth mode, if it is not already doing something else.
-        Return a _bleio.Adapter.
-        """
-        # Will fail with ImportError if _bleio is not on the board.
-        # That exception is probably good enough.
-        # pylint: disable=import-outside-toplevel
-        import _bleio
-
-        if self._mode == ESP32.BLUETOOTH:
-            return _bleio.adapter
-        if self._mode == ESP32.WIFI:
-            raise RuntimeError("ESP32 is in Wifi mode")
-        self._mode = ESP32.BLUETOOTH
-
-        # Boot ESP32 from SPI flash.
-        self._gpio0_and_rts.switch_to_output(True)
-
-        # Choose Bluetooth mode.
-        self._chip_select.switch_to_output(False)
-
-        startup_message = self._reset_esp32()
         if not startup_message:
             raise RuntimeError("ESP32 did not respond with a startup message")
         if debug:
@@ -106,20 +123,78 @@ class ESP32:
             except UnicodeError:
                 raise RuntimeError("Garbled ESP32 startup message") from UnicodeError
 
+        # Everything's fine. Remember mode.
+        self._mode = mode
+
+    def start_bluetooth(self, uart=None, debug=False):
+        """Set up the ESP32 in HCI Bluetooth mode, if it is not already doing something else.
+
+        :param uart busio.UART: `~busio.UART` used for communication with the ESP32.
+          `uart` must have its `baudrate=115200`, `timeout = 0`,
+          and `receiver_buffer_size` at least of size 512.
+          If not supplied, ``board.TX`` and ``board.RX`` are used to create a suitable UART.
+
+        :return: A `_bleio.Adapter`, to be passed to `_bleio.set_adapter()`.
+        """
+        # Will fail with ImportError if _bleio is not on the board.
+        # That exception is probably good enough.
+        # pylint: disable=import-outside-toplevel
+        import _bleio
+
+        if self._mode == ESP32.BLUETOOTH:
+            # Already started.
+            return _bleio.adapter
+
+        if self._mode == ESP32.WIFI:
+            raise RuntimeError("ESP32 is in WiFi mode; use stop_wifi() first")
+
+        # Choose Bluetooth mode.
+        self._chip_select.switch_to_output(False)
+
+        self._uart = uart or busio.UART(
+            board.ESP_TX,
+            board.ESP_RX,
+            baudrate=115200,
+            timeout=0,
+            receiver_buffer_size=512,
+        )
+
+        # Reset into Bluetooth mode.
+        self.reset(ESP32.BLUETOOTH, debug=debug)
+
+        self._busy_cts.switch_to_input()
+        self._gpio0_rts.switch_to_output()
         # pylint: disable=no-member
         # pylint: disable=unexpected-keyword-arg
-        return _bleio.Adapter(uart=self._uart, rts=self._gpio0_and_rts, cts=self._cts)
+        self._bleio_adapter = _bleio.Adapter(
+            uart=self._uart, rts=self._gpio0_rts, cts=self._busy_cts
+        )
+        self._bleio_adapter.enabled = True
+        return self._bleio_adapter
 
     def stop_bluetooth(self):
-        """Stop Bluetooth on the ESP32."""
+        """Stop Bluetooth on the ESP32. Deinitialize the ~busio.UART used for communication"""
         if self._mode != ESP32.BLUETOOTH:
             return
-        self._reset_esp32()
+        self._bleio_adapter.enabled = False
+        self.reset(ESP32.NOT_IN_USE)
+        self._uart.deinit()
+        self._uart = None
 
-    def start_wifi(self):
-        """Start Wifi on the ESP32."""
-        raise NotImplementedError
+    def start_wifi(self, spi=None):
+        """Start WiFi on the ESP32.
+
+        :param spi: `busio.SPI` used for communication with the eSP32.
+          If not supplied, `board.SPI()` is used.
+        :return: the `~busio.SPI` object that will be used.
+        :rtype: busio.SPI
+        """
+        self.reset(ESP32.WIFI)
+        self._spi = spi or board.SPI()
+        return self._spi
 
     def stop_wifi(self):
-        """Stop Wifi on the ESP32."""
-        raise NotImplementedError
+        """Stop WiFi on the ESP32.
+        The `busio.SPI` used is not deinitialized.
+        """
+        self.reset(ESP32.NOT_IN_USE)
