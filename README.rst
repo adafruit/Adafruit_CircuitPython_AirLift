@@ -35,9 +35,6 @@ Installing from PyPI
 .. note:: This library is not available on PyPI yet. Install documentation is included
    as a standard element. Stay tuned for PyPI availability!
 
-.. todo:: Remove the above note if PyPI version is/will be available at time of release.
-   If the library is not planned for PyPI, remove the entire 'Installing from PyPI' section.
-
 On supported GNU/Linux systems like the Raspberry Pi, you can install the driver locally `from
 PyPI <https://pypi.org/project/adafruit-circuitpython-airlift/>`_. To install for current user:
 
@@ -63,7 +60,14 @@ To install in a virtual environment in your current project:
 Usage Example
 =============
 
-.. todo:: Add a quick, simple example. It and other examples should live in the examples folder and be included in docs/examples.rst.
+Example::
+
+  from adafruit_airlift.esp32 import ESP32
+  import _bleio
+
+  esp32 = ESP32(debug=True)
+  _bleio.set_adapter(esp32.start_bluetooth())
+
 
 Contributing
 ============
