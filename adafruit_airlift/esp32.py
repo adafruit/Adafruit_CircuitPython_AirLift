@@ -1,4 +1,3 @@
-# SPDX-FileCopyrightText: 2017 Scott Shawcroft, written for Adafruit Industries
 # SPDX-FileCopyrightText: Copyright (c) 2020 Dan Halbert for Adafruit Industries
 #
 # SPDX-License-Identifier: MIT
@@ -189,12 +188,21 @@ class ESP32:
         :return: the ``busio.SPI`` object that will be used.
         :rtype: busio.SPI
         """
+        if self._mode == ESP32.WIFI:
+            # Already started.
+            return self._spi
+
+        if self._mode == ESP32.BLUETOOTH:
+            raise RuntimeError("ESP32 is in Bluetooth mode; use stop_bluetooth() first")
+
         self.reset(ESP32.WIFI)
         self._spi = spi or board.SPI()
         return self._spi
 
     def stop_wifi(self):
         """Stop WiFi on the ESP32.
-        The `busio.SPI` used is not deinitialized.
+        The `busio.SPI` used is not deinitialized, since it may be in use for other devices.
         """
+        if self._mode != ESP32.WIFI:
+            return
         self.reset(ESP32.NOT_IN_USE)
