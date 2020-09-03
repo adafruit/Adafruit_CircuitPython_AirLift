@@ -6,3 +6,6 @@
 
 .. automodule:: adafruit_airlift
    :members:
+
+.. automodule:: adafruit_airlift.esp32
+   :members:

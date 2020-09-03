@@ -129,12 +129,12 @@ class ESP32:
     def start_bluetooth(self, uart=None, debug=False):
         """Set up the ESP32 in HCI Bluetooth mode, if it is not already doing something else.
 
-        :param uart busio.UART: `~busio.UART` used for communication with the ESP32.
-          `uart` must have its `baudrate=115200`, `timeout = 0`,
-          and `receiver_buffer_size` at least of size 512.
+        :param uart busio.UART: Used for communication with the ESP32.
+          ``uart`` must have its ``baudrate = 115200``, ``timeout = 0``,
+          and ``receiver_buffer_size`` at least of size 512.
           If not supplied, ``board.TX`` and ``board.RX`` are used to create a suitable UART.
 
-        :return: A `_bleio.Adapter`, to be passed to `_bleio.set_adapter()`.
+        :return: A `_bleio.Adapter`, to be passed to ``_bleio.set_adapter()``.
         """
         # Will fail with ImportError if _bleio is not on the board.
         # That exception is probably good enough.
@@ -184,9 +184,9 @@ class ESP32:
     def start_wifi(self, spi=None):
         """Start WiFi on the ESP32.
 
-        :param spi: `busio.SPI` used for communication with the eSP32.
-          If not supplied, `board.SPI()` is used.
-        :return: the `~busio.SPI` object that will be used.
+        :param spi busio.SPI: Used for communication with the eSP32.
+          If not supplied, ``board.SPI()`` is used.
+        :return: the ``busio.SPI`` object that will be used.
         :rtype: busio.SPI
         """
         self.reset(ESP32.WIFI)
