@@ -125,14 +125,15 @@ class ESP32:
         # Everything's fine. Remember mode.
         self._mode = mode
 
-    def start_bluetooth(self, uart=None, debug=False):
+    # pylint: disable=invalid-name
+    def start_bluetooth(self, tx=None, rx=None, debug=False):
         """Set up the ESP32 in HCI Bluetooth mode, if it is not already doing something else.
 
-        :param uart busio.UART: Used for communication with the ESP32.
-          ``uart`` must have its ``baudrate = 115200``, ``timeout = 0``,
-          and ``receiver_buffer_size`` at least of size 512.
-          If not supplied, ``board.TX`` and ``board.RX`` are used to create a suitable UART.
-
+        :param reset ~microcontroller.Pin: ESP32 TX pin for Bluetooth UART communication.
+           If `None`, use ``board.ESP_TX``.
+        :param gpio0 ~microcontroller.Pin: ESP32 RX pin for Bluetooth UART communication.
+           If `None`, use ``board.ESP_RX``.
+        :param debug bool: Print out some debugging information.
         :return: A `_bleio.Adapter`, to be passed to ``_bleio.set_adapter()``.
         """
         # Will fail with ImportError if _bleio is not on the board.
@@ -150,9 +151,9 @@ class ESP32:
         # Choose Bluetooth mode.
         self._chip_select.switch_to_output(False)
 
-        self._uart = uart or busio.UART(
-            board.ESP_TX,
-            board.ESP_RX,
+        self._uart = busio.UART(
+            tx or board.ESP_TX,
+            rx or board.ESP_RX,
             baudrate=115200,
             timeout=0,
             receiver_buffer_size=512,
