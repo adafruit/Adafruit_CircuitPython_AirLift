@@ -30,8 +30,18 @@ class ESP32:
     """WiFi mode."""
     _MODES = (NOT_IN_USE, BOOTLOADER, BLUETOOTH, WIFI)
 
+    # pylint: disable=invalid-name
     def __init__(
-        self, *, reset=None, gpio0=None, busy=None, chip_select=None, reset_high=False,
+        self,
+        *,
+        reset=None,
+        reset_high=False,
+        gpio0=None,
+        busy=None,
+        chip_select=None,
+        tx=None,
+        rx=None,
+        spi=None
     ):
 
         """Create an ESP32 instance, passing the objects needed to reset and communicate
@@ -39,6 +49,8 @@ class ESP32:
 
         :param reset ~microcontroller.Pin: ESP32 RESET pin.
            If `None`, use ``board.ESP_RESET``.
+        :param reset_high bool: True if `reset` is brought high to reset;
+            `False` if brought low.
         :param gpio0 ~microcontroller.Pin: ESP32 GPIO0 pin.
            Used for ESP32 boot selection when reset, and as RTS for UART communication.
            If `None`, use ``board.ESP_GPIO0``.
@@ -48,8 +60,12 @@ class ESP32:
         :param chip_select ~microcontroller.Pin: ESP32 CS (chip select) pin.
             Also used for ESP32 mode selection when reset.
             If `None`, use ``board.ESP_CS``.
-        :param reset_high bool: True if `reset` is brought high to reset;
-            `False` if brought low.
+        :param tx ~microcontroller.Pin: ESP32 TX pin for Bluetooth UART communication.
+           If `None`, use ``board.ESP_TX`` when in Bluetooth mode.
+        :param rx ~microcontroller.Pin: ESP32 RX pin for Bluetooth UART communication.
+           If `None`, use ``board.ESP_RX`` when in Bluetooth mode.
+        :param spi busio.SPI: Used for communication with the ESP32.
+          If not supplied, ``board.SPI()`` is used when in WiFi mode.
         """
         self._mode = ESP32.NOT_IN_USE
 
@@ -65,10 +81,13 @@ class ESP32:
         self._chip_select = DigitalInOut(chip_select or board.ESP_CS)
 
         # Used for Bluetooth mode.
+        self._tx = tx
+        self._rx = rx
         self._uart = None
         self._bleio_adapter = None
+
         # Used for WiFi mode.
-        self._spi = None
+        self._spi = spi
 
     def reset(self, mode, debug=False):
         """Do hard reset of the ESP32.
@@ -126,13 +145,9 @@ class ESP32:
         self._mode = mode
 
     # pylint: disable=invalid-name
-    def start_bluetooth(self, tx=None, rx=None, debug=False):
+    def start_bluetooth(self, debug=False):
         """Set up the ESP32 in HCI Bluetooth mode, if it is not already doing something else.
 
-        :param reset ~microcontroller.Pin: ESP32 TX pin for Bluetooth UART communication.
-           If `None`, use ``board.ESP_TX``.
-        :param gpio0 ~microcontroller.Pin: ESP32 RX pin for Bluetooth UART communication.
-           If `None`, use ``board.ESP_RX``.
         :param debug bool: Print out some debugging information.
         :return: A `_bleio.Adapter`, to be passed to ``_bleio.set_adapter()``.
         """
@@ -152,8 +167,8 @@ class ESP32:
         self._chip_select.switch_to_output(False)
 
         self._uart = busio.UART(
-            tx or board.ESP_TX,
-            rx or board.ESP_RX,
+            self._tx or board.ESP_TX,
+            self._rx or board.ESP_RX,
             baudrate=115200,
             timeout=0,
             receiver_buffer_size=512,
@@ -181,12 +196,10 @@ class ESP32:
         self._uart.deinit()
         self._uart = None
 
-    def start_wifi(self, spi=None):
+    def start_wifi(self, debug=False):
         """Start WiFi on the ESP32.
 
-        :param spi busio.SPI: Used for communication with the eSP32.
-          If not supplied, ``board.SPI()`` is used.
-        :return: the ``busio.SPI`` object that will be used.
+        :return: the ``busio.SPI`` object that will be used to communicate with the ESP32.
         :rtype: busio.SPI
         """
         if self._mode == ESP32.WIFI:
@@ -196,13 +209,14 @@ class ESP32:
         if self._mode == ESP32.BLUETOOTH:
             raise RuntimeError("ESP32 is in Bluetooth mode; use stop_bluetooth() first")
 
-        self.reset(ESP32.WIFI)
-        self._spi = spi or board.SPI()
+        self.reset(ESP32.WIFI, debug=debug)
+        if self._spi is None:
+            self._spi = board.SPI()
         return self._spi
 
     def stop_wifi(self):
         """Stop WiFi on the ESP32.
-        The `busio.SPI` used is not deinitialized, since it may be in use for other devices.
+        The `busio.SPI` object used is not deinitialized, since it may be in use for other devices.
         """
         if self._mode != ESP32.WIFI:
             return
