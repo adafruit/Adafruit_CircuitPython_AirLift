@@ -69,6 +69,11 @@ Example::
   _bleio.set_adapter(esp32.start_bluetooth())
 
 
+Documentation
+=============
+
+API documentation for this library can be found on `Read the Docs <https://circuitpython.readthedocs.io/projects/airlift/en/latest/>`_.
+
 Contributing
 ============
 
