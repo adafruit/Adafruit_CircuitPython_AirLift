@@ -97,7 +97,7 @@ class ESP32:
         # Used for WiFi mode.
         self._spi = spi
 
-    def reset(self, mode: int, debug: bool = False):
+    def reset(self, mode: int, debug: bool = False) -> None:
         """Do hard reset of the ESP32.
 
         :param mode: One of `ESP32.NOT_IN_USE`, `ESP32.BOOTLOADER`, `ESP32.BLUETOOTH`, `ESP32.WIFI`.
