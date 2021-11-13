@@ -16,6 +16,14 @@ import board
 import busio
 from digitalio import DigitalInOut
 
+try:
+    from typing import Optional
+    from microcontroller import Pin
+    from busio import SPI
+    from _bleio import Adapter
+except ImportError:
+    pass
+
 
 class ESP32:
     """Class to manage ESP32 running NINA firmware for WiFi or Bluetooth."""
@@ -34,14 +42,14 @@ class ESP32:
     def __init__(
         self,
         *,
-        reset=None,
-        reset_high=False,
-        gpio0=None,
-        busy=None,
-        chip_select=None,
-        tx=None,
-        rx=None,
-        spi=None
+        reset: Optional[Pin] = None,
+        reset_high: bool = False,
+        gpio0: Optional[Pin] = None,
+        busy: Optional[Pin] = None,
+        chip_select: Optional[Pin] = None,
+        tx: Optional[Pin] = None,
+        rx: Optional[Pin] = None,
+        spi: Optional[SPI] = None
     ):
 
         """Create an ESP32 instance, passing the objects needed to reset and communicate
@@ -89,7 +97,7 @@ class ESP32:
         # Used for WiFi mode.
         self._spi = spi
 
-    def reset(self, mode, debug=False):
+    def reset(self, mode: int, debug: bool = False) -> None:
         """Do hard reset of the ESP32.
 
         :param mode: One of `ESP32.NOT_IN_USE`, `ESP32.BOOTLOADER`, `ESP32.BLUETOOTH`, `ESP32.WIFI`.
@@ -145,7 +153,7 @@ class ESP32:
         self._mode = mode
 
     # pylint: disable=invalid-name
-    def start_bluetooth(self, debug=False):
+    def start_bluetooth(self, debug: bool = False) -> Adapter:
         """Set up the ESP32 in HCI Bluetooth mode, if it is not already doing something else.
 
         :param debug bool: Print out some debugging information.
@@ -196,7 +204,7 @@ class ESP32:
         self._uart.deinit()
         self._uart = None
 
-    def start_wifi(self, debug=False):
+    def start_wifi(self, debug: bool = False) -> SPI:
         """Start WiFi on the ESP32.
 
         :return: the ``busio.SPI`` object that will be used to communicate with the ESP32.
