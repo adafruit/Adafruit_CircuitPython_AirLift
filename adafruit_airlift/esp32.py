@@ -136,10 +136,11 @@ class ESP32:
             return
 
         startup_message = b""
-        while self._uart.in_waiting:  # pylint: disable=no-member
-            more = self._uart.read()
-            if more:
-                startup_message += more
+        if self._uart is not None:
+            while self._uart.in_waiting:  # pylint: disable=no-member
+                more = self._uart.read()
+                if more:
+                    startup_message += more
 
         if not startup_message:
             raise RuntimeError("ESP32 did not respond with a startup message")
