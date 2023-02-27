@@ -147,10 +147,12 @@ class ESP32:
                 try:
                     print(startup_message.decode("utf-8"))
                 except UnicodeError:
-                    raise RuntimeError("Garbled ESP32 startup message") from UnicodeError
+                    raise RuntimeError(
+                        "Garbled ESP32 startup message"
+                    ) from UnicodeError
         else:
             raise RuntimeError("ESP32 did not respond with a startup message")
-        
+
         # Everything's fine. Remember mode.
         self._mode = mode
 
