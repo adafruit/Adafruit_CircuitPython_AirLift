@@ -136,18 +136,22 @@ class ESP32:
             return
 
         startup_message = b""
-        while self._uart.in_waiting:  # pylint: disable=no-member
-            more = self._uart.read()
-            if more:
-                startup_message += more
+        if self._uart is not None:
+            while self._uart.in_waiting:  # pylint: disable=no-member
+                more = self._uart.read()
+                if more:
+                    startup_message += more
 
-        if not startup_message:
+        if startup_message:
+            if debug:
+                try:
+                    print(startup_message.decode("utf-8"))
+                except UnicodeError:
+                    raise RuntimeError(
+                        "Garbled ESP32 startup message"
+                    ) from UnicodeError
+        else:
             raise RuntimeError("ESP32 did not respond with a startup message")
-        if debug:
-            try:
-                print(startup_message.decode("utf-8"))
-            except UnicodeError:
-                raise RuntimeError("Garbled ESP32 startup message") from UnicodeError
 
         # Everything's fine. Remember mode.
         self._mode = mode
@@ -174,13 +178,14 @@ class ESP32:
         # Choose Bluetooth mode.
         self._chip_select.switch_to_output(False)
 
-        self._uart = busio.UART(
-            self._tx or board.ESP_TX,
-            self._rx or board.ESP_RX,
-            baudrate=115200,
-            timeout=0,
-            receiver_buffer_size=512,
-        )
+        if self._uart is None:
+            self._uart = busio.UART(
+                self._tx or board.ESP_TX,
+                self._rx or board.ESP_RX,
+                baudrate=115200,
+                timeout=0,
+                receiver_buffer_size=512,
+            )
 
         # Reset into Bluetooth mode.
         self.reset(ESP32.BLUETOOTH, debug=debug)
@@ -189,9 +194,11 @@ class ESP32:
         self._gpio0_rts.switch_to_output()
         # pylint: disable=no-member
         # pylint: disable=unexpected-keyword-arg
-        self._bleio_adapter = _bleio.Adapter(
-            uart=self._uart, rts=self._gpio0_rts, cts=self._busy_cts
-        )
+        if self._bleio_adapter is None:
+            self._bleio_adapter = _bleio.Adapter(
+                uart=self._uart, rts=self._gpio0_rts, cts=self._busy_cts
+            )
+
         self._bleio_adapter.enabled = True
         return self._bleio_adapter
 
@@ -201,8 +208,6 @@ class ESP32:
             return
         self._bleio_adapter.enabled = False
         self.reset(ESP32.NOT_IN_USE)
-        self._uart.deinit()
-        self._uart = None
 
     def start_wifi(self, debug: bool = False) -> SPI:
         """Start WiFi on the ESP32.
