@@ -51,7 +51,6 @@ class ESP32:
         rx: Optional[Pin] = None,
         spi: Optional[SPI] = None
     ):
-
         """Create an ESP32 instance, passing the objects needed to reset and communicate
         with the adapter.
 
