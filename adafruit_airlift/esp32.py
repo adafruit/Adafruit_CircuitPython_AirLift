@@ -39,6 +39,7 @@ class ESP32:
     _MODES = (NOT_IN_USE, BOOTLOADER, BLUETOOTH, WIFI)
 
     # pylint: disable=invalid-name
+    # pylint: disable=too-many-arguments
     def __init__(
         self,
         *,
@@ -54,24 +55,24 @@ class ESP32:
         """Create an ESP32 instance, passing the objects needed to reset and communicate
         with the adapter.
 
-        :param reset ~microcontroller.Pin: ESP32 RESET pin.
+        :param ~microcontroller.Pin reset: ESP32 RESET pin.
            If `None`, use ``board.ESP_RESET``.
-        :param reset_high bool: True if `reset` is brought high to reset;
+        :param bool reset_high: True if `reset` is brought high to reset;
             `False` if brought low.
-        :param gpio0 ~microcontroller.Pin: ESP32 GPIO0 pin.
+        :param ~microcontroller.Pin gpio0: ESP32 GPIO0 pin.
            Used for ESP32 boot selection when reset, and as RTS for UART communication.
            If `None`, use ``board.ESP_GPIO0``.
-        :param busy ~microcontroller.Pin: ESP32 BUSY pin (sometimes called READY).
+        :param ~microcontroller.Pin busy: ESP32 BUSY pin (sometimes called READY).
            Used as CTS indicator for UART communication.
            If `None`, use ``board.ESP_BUSY``.
-        :param chip_select ~microcontroller.Pin: ESP32 CS (chip select) pin.
+        :param ~microcontroller.Pin chip_select: ESP32 CS (chip select) pin.
             Also used for ESP32 mode selection when reset.
             If `None`, use ``board.ESP_CS``.
-        :param tx ~microcontroller.Pin: ESP32 TX pin for Bluetooth UART communication.
+        :param ~microcontroller.Pin tx: ESP32 TX pin for Bluetooth UART communication.
            If `None`, use ``board.ESP_TX`` when in Bluetooth mode.
-        :param rx ~microcontroller.Pin: ESP32 RX pin for Bluetooth UART communication.
+        :param ~microcontroller.Pin rx: ESP32 RX pin for Bluetooth UART communication.
            If `None`, use ``board.ESP_RX`` when in Bluetooth mode.
-        :param spi busio.SPI: Used for communication with the ESP32.
+        :param busio.SPI spi: Used for communication with the ESP32.
           If not supplied, ``board.SPI()`` is used when in WiFi mode.
         """
         self._mode = ESP32.NOT_IN_USE
@@ -134,28 +135,28 @@ class ESP32:
             # No startup message expected.
             return
 
-        startup_message = b""
-        if self._uart is not None:
+        # Don't look for a startup message if there is no UART
+        if self._uart:
+            startup_message = b""
             while self._uart.in_waiting:  # pylint: disable=no-member
                 more = self._uart.read()
                 if more:
                     startup_message += more
 
-        if startup_message:
-            if debug:
-                try:
-                    print(startup_message.decode("utf-8"))
-                except UnicodeError:
-                    raise RuntimeError(
-                        "Garbled ESP32 startup message"
-                    ) from UnicodeError
-        else:
-            raise RuntimeError("ESP32 did not respond with a startup message")
+            if startup_message:
+                if debug:
+                    try:
+                        print(startup_message.decode("utf-8"))
+                    except UnicodeError:
+                        raise RuntimeError(
+                            "Garbled ESP32 startup message"
+                        ) from UnicodeError
+            else:
+                raise RuntimeError("ESP32 did not respond with a startup message")
 
         # Everything's fine. Remember mode.
         self._mode = mode
 
-    # pylint: disable=invalid-name
     def start_bluetooth(self, debug: bool = False) -> Adapter:
         """Set up the ESP32 in HCI Bluetooth mode, if it is not already doing something else.
 
@@ -174,9 +175,7 @@ class ESP32:
         if self._mode == ESP32.WIFI:
             raise RuntimeError("ESP32 is in WiFi mode; use stop_wifi() first")
 
-        # Choose Bluetooth mode.
-        self._chip_select.switch_to_output(False)
-
+        # For bluetooth, we must be able to talk over UART to the ESP32.
         if self._uart is None:
             self._uart = busio.UART(
                 self._tx or board.ESP_TX,
@@ -185,6 +184,9 @@ class ESP32:
                 timeout=0,
                 receiver_buffer_size=512,
             )
+
+        # Choose Bluetooth mode.
+        self._chip_select.switch_to_output(False)
 
         # Reset into Bluetooth mode.
         self.reset(ESP32.BLUETOOTH, debug=debug)
